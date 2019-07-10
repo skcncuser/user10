@@ -1,0 +1,224 @@
+user10@Azure:~/aws$ ls -altr
+total 76
+-rw-r--r-- 1 user10 user10   504 Jul 10 04:55 rout*
+-rw-r--r-- 1 user10 user10    47 Jul 10 04:56 provider.tf
+drwxr-xr-x 3 user10 user10  4096 Jul 10 04:56 .terraform
+-rw-r--r-- 1 user10 user10   330 Jul 10 05:00 subnet.tf
+-rw-r--r-- 1 user10 user10   172 Jul 10 05:03 vpc.tf
+-rw-r--r-- 1 user10 user10    81 Jul 10 05:03 internet_gateway.tf
+-rw-r--r-- 1 user10 user10   518 Jul 10 05:06 nacl.tf
+-rw-r--r-- 1 user10 user10   299 Jul 10 05:08 security_group.tf
+-rw-r--r-- 1 user10 user10   501 Jul 10 05:13 key.tf
+-rw-r--r-- 1 user10 user10   183 Jul 10 05:16 variable.tf
+-rw-r--r-- 1 user10 user10   810 Jul 10 05:20 vm.tf
+drwxr-xr-x 6 user10 user10  4096 Jul 10 05:20 ..
+-rw-r--r-- 1 user10 user10  7260 Jul 10 05:21 terraform.tfstate.backup
+-rw-r--r-- 1 user10 user10 12826 Jul 10 05:22 terraform.tfstate
+drwxr-xr-x 3 user10 user10  4096 Jul 10 05:22 .
+user10@Azure:~/aws$ cat *.tf
+resource "aws_internet_gateway" "dev" {
+  vpc_id = "${aws_vpc.user10_vpc.id}"
+
+}
+resource "aws_key_pair" "terraform-key" {
+  key_name = "aws-key"
+  public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDCcYskjVnLhNmoxQLqmeebWTjS
+
++OwNoqk8zjF0WURvHoOHDdtaDAy34GNsXCfO02yzbUySqqgQs81v2mGivl+pUH6BXgCBsO2iCIlVgwEAAt7rOT0K3cPbeGsJvATqOa3Gx
+
++NXW3zL18iLglhJOFINygDPd9O8ruAxoQGMsMju+yTr+pDdfaxI2iFPaxPVpHR2e4rKPCjnphOrK5Dd8YOzRp6oXXMELc5sFW5hLO
+
++qajD9IZm2xT5mp4omJCqZ5ociraGV6ogM7LNkcVCpm0Le+oDj1MVQhRcOdzglT
+
++4RjQlYVEvD5MnLgjUao9cGHwmVxwc2G45dTQzcMFGlgYFd user10@cc-30cbce91-6467bcd76d-zjbhx"
+}
+resource "aws_default_network_acl" "dev_default" {
+  default_network_acl_id = "${aws_vpc.user10_vpc.default_network_acl_id}"
+
+  ingress {
+    protocol   = -1
+    rule_no    = 100
+    action     = "allow"
+    cidr_block = "0.0.0.0/0"
+    from_port  = 0
+    to_port    = 0
+  }
+
+  egress {
+    protocol   = -1
+    rule_no    = 100
+    action     = "allow"
+    cidr_block = "0.0.0.0/0"
+    from_port  = 0
+    to_port    = 0
+  }
+
+  subnet_ids = [
+    "${aws_subnet.subnet_1a.id}",
+    "${aws_subnet.subnet_1c.id}",
+  ]
+
+}
+
+provider "aws" {
+  region = "ap-northeast-1"
+}
+resource "aws_default_security_group" "dev_default" {
+  vpc_id = "${aws_vpc.user10_vpc.id}"
+
+  ingress {
+    protocol  = -1
+    self      = true
+    from_port = 0
+    to_port   = 0
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+}
+resource "aws_subnet" "subnet_1a" {
+  vpc_id            = "${aws_vpc.user10_vpc.id}"
+  availability_zone = "ap-northeast-1a"
+  cidr_block        = "10.0.1.0/24"
+
+}
+
+resource "aws_subnet" "subnet_1c" {
+  vpc_id            = "${aws_vpc.user10_vpc.id}"
+  availability_zone = "ap-northeast-1c"
+  cidr_block        = "10.0.2.0/24"
+
+}
+
+variable "amazon_linux" {
+  # Amazon Linux AMI 2017.03.1 (HVM), SSD Volume Type - ami-4af5022c
+  default = "ami-0c3fd0f5d33134a76"
+}
+
+variable "dev_keyname" {
+  default = "aws-key"
+}
+resource "aws_security_group" "bastion" {
+  name        = "bastion"
+  description = "open ssh port for bastion"
+
+  vpc_id = "${aws_vpc.user10_vpc.id}"
+
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+}
+
+resource "aws_instance" "user10vm_1a" {
+  ami               = "${var.amazon_linux}"
+  availability_zone = "ap-northeast-1a"
+  instance_type     = "t2.micro"
+  key_name          = "${var.dev_keyname}"
+
+  vpc_security_group_ids = [
+    "${aws_security_group.bastion.id}",
+    "${aws_default_security_group.dev_default.id}",
+  ]
+
+  subnet_id                   = "${aws_subnet.subnet_1a.id}"
+  associate_public_ip_address = true
+
+}
+
+resource "aws_vpc" "user10_vpc" {
+  cidr_block           = "10.0.0.0/16"
+  enable_dns_hostnames = true
+  enable_dns_support   = true
+  instance_tenancy     = "default"
+
+}
+
+==============
+ main.tf
+Application (client) ID:29c332a8-5536-45d8-a462-78cbb3d3cd03
+Directory (tenant) ID:96e3cac9-1ab3-436b-9f79-2a0a4b687f1b
+secret : KgX*[@R-Va7eDFWdiO9Ih0mloTEAnP4x
+구독: 	e0fae348-f6c2-45f5-87b7-c41c22782d8f
+
+provider "azurerm" {
+    subscription_id = "e0fae348-f6c2-45f5-87b7-c41c22782d8f"
+    client_id       = "29c332a8-5536-45d8-a462-78cbb3d3cd03"
+    client_secret   = "KgX*[@R-Va7eDFWdiO9Ih0mloTEAnP4x"
+    tenant_id       = "96e3cac9-1ab3-436b-9f79-2a0a4b687f1b"
+}
+
+resource.tf
+resource "azurerm_resource_group" "user10_final" {
+    name     = "user10_final"
+    location = "koreasouth"
+}
+
+vnet.tf
+resource "azurerm_virtual_network" "myterraformnetwork" {
+    name                = "user10Vnet"
+    address_space       = ["10.0.0.0/16"]
+    location            = "koreasouth"
+    resource_group_name = "${azurerm_resource_group.user10_final.name}"
+
+}
+
+subnet.tf
+resource "azurerm_subnet" "myterraformsubnet" {
+    name                 = "user10Subnet1"
+    resource_group_name  = "${azurerm_resource_group.user10_final.name}"
+    virtual_network_name = "${azurerm_virtual_network.myterraformnetwork.name}"
+    address_prefix       = "10.0.1.0/24"
+}
+
+user10@Azure:~/azure$ cat publicIP.tf
+resource "azurerm_public_ip" "myterraformpublicip" {
+    name                         = "user10PublicIP"
+    location                     = "koreasouth"
+    resource_group_name          = "${azurerm_resource_group.user10_final.name}"
+    allocation_method            = "Dynamic"
+}
+user10@Azure:~/azure$ cat networkSecurityGroup.tf
+resource "azurerm_network_security_group" "myterraformnsg" {
+    name                = "user10NetworkSecurityGroup"
+    location            = "koreasouth"
+    resource_group_name = "${azurerm_resource_group.user10_final.name}"
+
+    security_rule {
+        name                       = "SSH"
+        priority                   = 1001
+        direction                  = "Inbound"
+        access                     = "Allow"
+        protocol                   = "Tcp"
+        source_port_range          = "*"
+        destination_port_range     = "22"
+        source_address_prefix      = "*"
+        destination_address_prefix = "*"
+    }
+    security_rule {
+        name                       = "HTTP"
+        priority                   = 2001
+        direction                  = "Inbound"
+        access                     = "Allow"
+        protocol                   = "Tcp"
+        source_port_range          = "*"
+        destination_port_range     = "80"
+        source_address_prefix      = "*"
+        destination_address_prefix = "*"
+    }
+}
